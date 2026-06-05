@@ -9,7 +9,8 @@ Para descargar el proyecto desde GitHub:
 
 ```bash
 git clone https://github.com/aljarce44/IBDN_PracticaCreativa_Flight_Prediction.git practica_creativa
-cd practica_creativa```
+cd practica_creativa
+```
 
 ## README
 
