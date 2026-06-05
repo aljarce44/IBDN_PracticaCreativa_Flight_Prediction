@@ -813,6 +813,8 @@ C. Crear VM si se quiere ejecutar el apartado 3: Docker en Google Cloud
 D. Crear clúster GKE si se quiere ejecutar el apartado 4: Kubernetes en Google Cloud
 ```
 
+---
+
 ## A. Configurar proyecto de Google Cloud
 
 Antes de ejecutar estos comandos, el usuario debe tener un proyecto de Google Cloud creado y con facturación activa.
@@ -894,22 +896,6 @@ debe ejecutarse como:
 
 ```bash
 gcloud config set project mi-proyecto-ibdn
-```
-
-Comprobar configuración:
-
-```bash
-gcloud config get-value project
-gcloud config get-value compute/region
-gcloud config get-value compute/zone
-```
-
-Activar las APIs necesarias:
-
-```bash
-gcloud services enable compute.googleapis.com
-gcloud services enable container.googleapis.com
-gcloud services enable artifactregistry.googleapis.com
 ```
 
 ---
