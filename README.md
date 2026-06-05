@@ -1,368 +1,536 @@
-# Agile_Data_Code_2
-
-Code for [Agile Data Science 2.0](http://shop.oreilly.com/product/0636920051619.do), O'Reilly 2017. Now available at the [O'Reilly Store](http://shop.oreilly.com/product/0636920051619.do), on [Amazon](https://www.amazon.com/Agile-Data-Science-2-0-Applications/dp/1491960116) (in Paperback and Kindle) and on [O'Reilly Safari](https://www.safaribooksonline.com/library/view/agile-data-science/9781491960103/). Also available anywhere technical books are sold!
-
-This is also the code for the [Realtime Predictive Analytics](http://datasyndrome.com/video) video course and [Introduction to PySpark](http://datasyndrome.com/training) live course!
-
-Have problems? Please file an issue!
+Práctica Creativa Álvaro Jiménez Arce IBDN Flight Prediction GitHub:
 
 
-## Realtime Predictive Analytics Course
-
-There is now a video course using code from chapter 8, [Realtime Predictive Analytics with Kafka, PySpark, Spark MLlib and Spark Streaming](http://datasyndrome.com/video). Check it out now at [datasyndrome.com/video](http://datasyndrome.com/video).
-
-A free preview of the course is available at [https://vimeo.com/202336113](https://vimeo.com/202336113)
-
-[<img src="images/video_course_cover.png">](http://datasyndrome.com/video)
-
-# The Data Value Pyramid
-
-Originally by Pete Warden, the data value pyramid is how the book is organized and structured. We climb it as we go forward each chapter.
-
-![Data Value Pyramid](images/climbing_the_pyramid_chapter_intro.png)
-
-# System Architecture
-
-The following diagrams are pulled from the book, and express the basic concepts in the system architecture. The front and back end architectures work together to make a complete predictive system.
-
-## Front End Architecture
-
-This diagram shows how the front end architecture works in our flight delay prediction application. The user fills out a form with some basic information in a form on a web page, which is submitted to the server. The server fills out some neccesary fields derived from those in the form like "day of year" and emits a Kafka message containing a prediction request. Spark Streaming is listening on a Kafka queue for these requests, and makes the prediction, storing the result in MongoDB. Meanwhile, the client has received a UUID in the form's response, and has been polling another endpoint every second. Once the data is available in Mongo, the client's next request picks it up. Finally, the client displays the result of the prediction to the user! 
-
-This setup is extremely fun to setup, operate and watch. Check out chapters 7 and 8 for more information!
-
-![Front End Architecture](images/front_end_realtime_architecture.png)
-
-## Back End Architecture
-
-The back end architecture diagram shows how we train a classifier model using historical data (all flights from 2015) on disk (HDFS or Amazon S3, etc.) to predict flight delays in batch in Spark. We save the model to disk when it is ready. Next, we launch a Kafka queue. We use Spark Streaming to load the classifier model, and then listen for prediction requests in a Kafka queue. When a prediction request arrives, Spark Streaming makes the prediction, storing the result in MongoDB where the web application can pick it up.
-
-This architecture is extremely powerful, and it is a huge benefit that we get to use the same code in batch and in realtime with PySpark Streaming.
-
-![Backend Architecture](images/back_end_realtime_architecture.png)
-
-# Screenshots
-
-Below are some examples of parts of the application we build in this book and in this repo. Check out the book for more!
-
-## Airline Entity Page
-
-Each airline gets its own entity page, complete with a summary of its fleet and a description pulled from Wikipedia.
-
-![Airline Page](images/airline_page_enriched_wikipedia.png)
-
-## Airplane Fleet Page
-
-We demonstrate summarizing an entity with an airplane fleet page which describes the entire fleet.
-
-![Airplane Fleet Page](images/airplanes_page_chart_v1_v2.png)
-
-## Flight Delay Prediction UI
-
-We create an entire realtime predictive system with a web front-end to submit prediction requests.
-
-![Predicting Flight Delays UI](images/predicting_flight_kafka_waiting.png)
-
-## Downloading Data
-
-Once the server comes up, download the data and you are ready to go. First change directory into the `practica_creativa` directory.
-
-```
+README: 
+Desplegar la práctica completa en 4 entornos:
+Docker local
+Kubernetes local
+Docker en Google Cloud mediante VM
+Kubernetes en Google Cloud mediante GKE
+0. Requisitos
+0.1. Requisitos instalados
+Antes de ejecutar la práctica, el equipo debe tener instalado:
+Docker Desktop
+Docker Compose
+kubectl
+Google Cloud CLI: gcloud
+Navegador web
+Conexión a Internet
+Si se usa Windows, también debe estar instalado:
+WSL 2 con Ubuntu
+Si se usa Linux, no hace falta WSL.
+Comprobar versiones:
+docker --version
+docker compose version
+kubectl version --client
+gcloud version
+Versiones usadas/recomendadas:
+Docker Desktop: versión reciente
+Docker Compose: v2.x
+kubectl: compatible con Kubernetes actual
+gcloud CLI: versión reciente
+Spark: 3.5.3
+Kafka: 7.6.1
+Cassandra: 4.1
+Python: 3.12
+MinIO: latest
+En Google Cloud debe existir:
+Proyecto: ibdn-flight-stack-alvaro
+Zona: europe-west1-b
+VM Docker: ibdn-docker-vm
+Cluster GKE: ibdn-flight-cluster
+Artifact Registry: europe-west1-docker.pkg.dev/ibdn-flight-stack-alvaro/ibdn-docker
+0.2. Abrir entorno
+Abrir Docker Desktop, si es necesario, y esperar a que esté iniciado completamente.
+Si se usa Windows, abrir PowerShell o CMD y entrar en WSL:
+wsl
+Si se usa Linux, abrir una terminal normal.
+Entrar en la carpeta del proyecto descargado:
 cd practica_creativa
-```
-Now download the data.
-
-For the [Realtime Predictive Analytics](http://datasyndrome.com/video)  run: 
-
-```
-resources/download_data.sh
-```
-## Installation
-
-You need to install each component included in the architecture. 
-The following list includes some links with the installation procedure for each component:
-
- - [Intellij](https://www.jetbrains.com/help/idea/installation-guide.html) (jdk 17) or VsCode
- - [Pyhton3](https://realpython.com/installing-python/) (Suggested version 3.7) 
- - [PIP](https://pip.pypa.io/en/stable/installing/)
- - [SDKMAN](https://sdkman.io/install/)
- - [SBT](https://www.scala-sbt.org/release/docs/Setup.html) 
- - [MongoDB](https://docs.mongodb.com/manual/installation/) (Suggested version 7.0.17, if it fails try with mongo 4.0)
-   In the ETSIT labs mongo is alrady installed
-   
-   Although you can install it directly with docker:
-   ```
-   $ docker run --name mongo -d -p 27017:27017 mongo:7.0.17 #or mongo:4.0 if mongo 6.0 fails
-   ```
- - [Spark](https://spark.apache.org/docs/latest/) (Mandatory version 3.5.3 -> you can install it with sdkman)
- - [Scala](https://www.scala-lang.org)(Mandatory version 2.12.10 -> you can install it with sdkman)
- - [Kafka](https://kafka.apache.org/quickstart) (Mandatory version kafka_2.12-3.9.0 with KRaft)
-
- ### Create and use Python venv
-
- ```
- python3 -m venv env
- source env/bin/activate
-
- ```
- 
- ### Install python libraries
- 
- ```
-  pip install -r requirements.txt
- ```
- ### Check Java installation
- 
- Open a console and use sdk man to check the installation of java:
- 
- ```
-   sdk list java
- ```
- In case you have other version installed, chage or instal de jdk 17
- ```
-   sdk install java 17.0.14-amzn
- ```
- Check the JAVA_HOME env:
- ```
-   echo ${JAVA_HOME}
- ```
- You should have an output similar to this:
- ```
-   /Users/admin/.sdkman/candidates/java/current
- ```
-
-  ### Start Kafka
-  
-  Open a console and go to the downloaded Kafka directory and run:
-  ```
-    KAFKA_CLUSTER_ID="$(bin/kafka-storage.sh random-uuid)"
-  ```
-  ```
-    bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties  
-  ```
-  
-  ```
-    bin/kafka-server-start.sh config/kraft/server.properties
-   ```
-   open a new console in the same directory and create a new topic :
-  ```
-      bin/kafka-topics.sh \
-        --create \
-        --bootstrap-server localhost:9092 \
-        --replication-factor 1 \
-        --partitions 1 \
-        --topic flight-delay-ml-request
-   ```
-   You should see the following message:
-  ```
-    Created topic "flight-delay-ml-request".
-  ```
-  You can see the topic we created with the list topics command:
-  ```
-      bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
-  ```
-  Output:
-  ```
-    flight-delay-ml-request
-  ```
-  (Optional) You can oen a new console with a consumer in order to see the messeges sent to that topic
-  ```
-  bin/kafka-console-consumer.sh \
-      --bootstrap-server localhost:9092 \
-      --topic flight-delay-ml-request \
-      --from-beginning
-  ```
-  ## Import the distance records to MongoDB
-  Check if you have Mongo up and running:
-  ```
-  service mongod status # if installed directly
-  docker ps # if installed with docker
-  docker logs mongo # if installed with docker but docker ps does not show mongo
-  ```
-  Output (if installed directly):
-  ```
-  mongod.service - MongoDB Database Server
-     Loaded: loaded (/lib/systemd/system/mongod.service; disabled; vendor preset: 
-     Active: active (running) since Tue 2019-10-01 14:58:53 CEST; 2h 11min ago
-       Docs: https://docs.mongodb.org/manual
-   Main PID: 7816 (mongod)
-     CGroup: /system.slice/mongod.service
-             └─7816 /usr/bin/mongod --config /etc/mongod.conf
-  
-  oct 01 14:58:53 amunoz systemd[1]: Started MongoDB Database Server.
-  ```
-  > [!NOTE]  
-  >In case you don't have run mongo with docker and is the first time you install monog or your are using the laboratory perform the following steps:
-  >Create a data directory for storing the mongo data inseide of the `practica_creativa` folder:
-  >```
-  >mkdir data_mongo
-  >```
-  >Open a terminal and run the mongo daemon for starting the server:
-  >```
-  >mongod —port 27017 —dbpath ./data_mongo —oplogSize 50
-  >```
-  >Don't close the terminar in any moment otherwise teh mongo server will stop.
-
-  In other terminal run the import_distances.sh script. If mongo was installed with docker you have to copy the /data downloaded inside the mongo container and check how to import a .jsonl (import_distances.sh)
-  ```
-  ./resources/import_distances.sh
-  ```
-  Output:
-  ```
-  2019-10-01T17:06:46.957+0200	connected to: mongodb://localhost/
-  2019-10-01T17:06:47.035+0200	4696 document(s) imported successfully. 0 document(s) failed to import.
-  MongoDB shell version v4.2.0
-  connecting to: mongodb://127.0.0.1:27017/agile_data_science?compressors=disabled&gssapiServiceName=mongodb
-  Implicit session: session { "id" : UUID("9bda4bb6-5727-4e91-8855-71db2b818232") }
-  MongoDB server version: 7.0.17
-  {
-  	"createdCollectionAutomatically" : false,
-  	"numIndexesBefore" : 1,
-  	"numIndexesAfter" : 2,
-  	"ok" : 1
-  }
-
-  ```
-  ## Train and Save de the model with PySpark mllib
-  In a console go to the base directory of the cloned repo, then go to the `practica_creativa` directory
-  ```
-    cd practica_creativa
-  ```
-  > [!NOTE]  
-  > You only need to set JAVA_HOME if you haven't done before.
-  >Set the `JAVA_HOME` env variable with the path of java installation directory, for example:
-  >```
-  >  export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk-amd64
-  >```
-  
-  Set the `SPARK_HOME` env variable with the path of your Spark installation folder, for example:
-  ```
-    export SPARK_HOME=/opt/spark
-    # if installed with sdkman you can get the installation folder with 'whereis spark-submit'
-  ```
-  Now, execute the script `train_spark_mllib_model.py`
-  ```
-      python3 resources/train_spark_mllib_model.py .
-  ```
-  As result, some files will be saved in the `models` folder 
-  
-  ```
-  ls ../models
-  
-  ```   
-  ## Run Flight Predictor
-  First, you need to change the base_paht val in the MakePrediction scala class,
-  change that val for the path where you clone repo is placed:
-  ```
-    val base_path= "/home/user/Desktop/practica_creativa"
-    
-  ``` 
-  Then run the code using Intellij, sbt, or spark-submit with their respective arguments. 
-  
-Please, note that in order to use spark-submit you first need to compile the code and build a JAR file using sbt. Also, when running the spark-submit command, you have to add at least these two packages with the --packages option:
-  ```
-  --packages org.mongodb.spark:mongo-spark-connector_2.12:10.4.1,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3
-     
-  ``` 
-   Be carefull with the packages version because if you are using another version of spark, kafka or mongo you have to choose the correspondent version to your installation. This packages work with Spark 3.5.3, kafka_2.12-3.9.0 and mongo superior to 6.0
-  
-  ## Start the prediction request Web Application
-  
-  Set the `PROJECT_HOME` env variable with the path of you cloned repository, for example:
-   ```
-  export PROJECT_HOME=/home/user/Desktop/practica_creativa
-   ```
-  Go to the `web` directory under `resources` and execute the flask web application file `predict_flask.py`:
-  ```
-  cd practica_creativa/resources/web
-  python3 predict_flask.py
-  
-  ```
-  Now, visit http://localhost:5000/flights/delays/predict_kafka and, for fun, open the JavaScript console. Enter a nonzero departure delay, an ISO-formatted date (I used 2016-12-25, which was in the future at the time I was writing this), a valid carrier code (use AA or DL if you don’t know one), an origin and destination (my favorite is ATL → SFO), and a valid flight number (e.g., 1519), and hit Submit. Watch the debug output in the JavaScript console as the client polls for data from the response endpoint at /flights/delays/predict/classify_realtime/response/.
-  
-  Quickly switch windows to your Spark console. Within 10 seconds, the length we’ve configured of a minibatch, you should see something like the following:
-  
-  ## Check the predictions records inserted in MongoDB
-  ```
-   $ mongo
-   > use use agile_data_science;
-   > db.flight_delay_ml_response.find();
-  
-  ```
-  You must have a similar output as:
-  
-  ```
-  { "_id" : ObjectId("5d8dcb105e8b5622696d6f2e"), "Origin" : "ATL", "DayOfWeek" : 6, "DayOfYear" : 360, "DayOfMonth" : 25, "Dest" : "SFO", "DepDelay" : 290, "Timestamp" : ISODate("2019-09-27T08:40:48.175Z"), "FlightDate" : ISODate("2016-12-24T23:00:00Z"), "Carrier" : "AA", "UUID" : "8e90da7e-63f5-45f9-8f3d-7d948120e5a2", "Distance" : 2139, "Route" : "ATL-SFO", "Prediction" : 3 }
-  { "_id" : ObjectId("5d8dcba85e8b562d1d0f9cb8"), "Origin" : "ATL", "DayOfWeek" : 6, "DayOfYear" : 360, "DayOfMonth" : 25, "Dest" : "SFO", "DepDelay" : 291, "Timestamp" : ISODate("2019-09-27T08:43:20.222Z"), "FlightDate" : ISODate("2016-12-24T23:00:00Z"), "Carrier" : "AA", "UUID" : "d3e44ea5-d42c-4874-b5f7-e8a62b006176", "Distance" : 2139, "Route" : "ATL-SFO", "Prediction" : 3 }
-  { "_id" : ObjectId("5d8dcbe05e8b562d1d0f9cba"), "Origin" : "ATL", "DayOfWeek" : 6, "DayOfYear" : 360, "DayOfMonth" : 25, "Dest" : "SFO", "DepDelay" : 5, "Timestamp" : ISODate("2019-09-27T08:44:16.432Z"), "FlightDate" : ISODate("2016-12-24T23:00:00Z"), "Carrier" : "AA", "UUID" : "a153dfb1-172d-4232-819c-8f3687af8600", "Distance" : 2139, "Route" : "ATL-SFO", "Prediction" : 1 }
+Comprobar que estamos en la carpeta correcta:
+ls
+Debe aparecer algo parecido a:
+docker-compose.yml
+k8s
+models
+resources
+lakehouse
+docker
+Comprobar configuración de Google Cloud:
+gcloud config get-value project
+gcloud config get-value compute/region
+gcloud config get-value compute/zone
+Debe salir:
+ibdn-flight-stack-alvaro
+europe-west1
+europe-west1-b
+Si no sale, configurar:
+gcloud config set project ibdn-flight-stack-alvaro
+gcloud config set compute/region europe-west1
+gcloud config set compute/zone europe-west1-b
+1. Docker local
+Web final:
+http://127.0.0.1:5001/flights/delays/predict_kafka
+1.1. Construir imágenes
+Desde la carpeta practica_creativa:
+docker compose build flask
+docker compose build spark
+1.2. Levantar servicios
+docker compose up -d
+Esperar: 2-5 minutos
+Comprobar contenedores:
+docker compose ps
+Debe aparecer Up en:
+cassandra-flight-docker
+flight-flask
+flight-kafka
+flight-spark-streaming
+flight-zookeeper
+minio-lakehouse-docker
+Si Kafka o Spark no aparecen como Up, ejecutar:
+docker compose up -d
+Esperar 1 minuto y volver a comprobar:
+docker compose ps
 
 
-```
+1.3. Preparar Cassandra
+Cassandra puede tardar aunque el contenedor aparezca como Up. Esperar 1 minuto antes de ejecutar estos comandos.
+Crear keyspace:
+docker exec -it cassandra-flight-docker cqlsh -e "CREATE KEYSPACE IF NOT EXISTS agile_data_science WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
+Crear tabla de predicciones:
+docker exec -it cassandra-flight-docker cqlsh -e "CREATE TABLE IF NOT EXISTS agile_data_science.flight_delay_ml_response (uuid text PRIMARY KEY, origin text, dest text, carrier text, route text, distance double, prediction text, timestamp text, day_of_month int, day_of_week int, day_of_year int, dep_delay double, flight_date text);"
+Crear tabla de distancias:
+docker exec -it cassandra-flight-docker cqlsh -e "CREATE TABLE IF NOT EXISTS agile_data_science.flight_distances (origin text, dest text, distance double, PRIMARY KEY (origin, dest));"
+Insertar distancias de prueba:
+docker exec -it cassandra-flight-docker cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('ATL', 'SFO', 2139);"
+docker exec -it cassandra-flight-docker cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('SFO', 'ATL', 2139);"
+docker exec -it cassandra-flight-docker cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('JFK', 'LAX', 2475);"
+docker exec -it cassandra-flight-docker cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('LAX', 'JFK', 2475);"
+Comprobar tablas:
+docker exec -it cassandra-flight-docker cqlsh -k agile_data_science -e "DESCRIBE TABLES;"
+Debe aparecer:
+flight_delay_ml_response
+flight_distances
+1.4. Preparar MinIO y modelos
+Crear bucket y carpetas:
+docker run --rm --network practica_creativa_default --entrypoint /bin/sh minio/mc -c "mc alias set local http://minio:9000 admin password123 && mc mb -p local/lakehouse && mc mb -p local/lakehouse/models && mc mb -p local/lakehouse/checkpoints"
+Subir modelos:
+docker run --rm --network practica_creativa_default -v "$(pwd)/models:/models" --entrypoint /bin/sh minio/mc -c "mc alias set local http://minio:9000 admin password123 && mc cp -r /models/* local/lakehouse/models/"
+Comprobar modelos:
+docker run --rm --network practica_creativa_default --entrypoint /bin/sh minio/mc -c "mc alias set local http://minio:9000 admin password123 && mc ls local/lakehouse/models/"
+Deben aparecer:
+arrival_bucketizer_2.0.bin/
+numeric_vector_assembler.bin/
+spark_random_forest_classifier.flight_delays.5.0.bin/
+string_indexer_model_Carrier.bin/
+string_indexer_model_Dest.bin/
+string_indexer_model_Origin.bin/
+string_indexer_model_Route.bin/
 
-### Train the model with Apache Airflow (optional and only for the final submission not the middle one)
+1.5. Preparar Kafka
+Asegurar que Zookeeper y Kafka están levantados:
+docker compose up -d zookeeper kafka
+Esperar: 1 minuto
+Crear topics:
+docker exec -it flight-kafka kafka-topics --bootstrap-server flight-kafka:29092 --create --if-not-exists --topic flight-delay-ml-request --partitions 1 --replication-factor 1
+docker exec -it flight-kafka kafka-topics --bootstrap-server flight-kafka:29092 --create --if-not-exists --topic flight-delay-ml-response --partitions 1 --replication-factor 1
+Comprobar topics:
+docker exec -it flight-kafka kafka-topics --bootstrap-server flight-kafka:29092 --list
+Debe aparecer:
+flight-delay-ml-request
+flight-delay-ml-response
 
-- The version of Apache Airflow used is the 2.1.4 and it is installed with pip. For development it uses SQLite as database but it is not recommended for production. For the laboratory SQLite is sufficient.
+1.6. Limpiar checkpoints y reiniciar Spark/Flask
+Limpiar checkpoints de Spark:
+docker run --rm --network practica_creativa_default --entrypoint /bin/sh minio/mc -c "mc alias set local http://minio:9000 admin password123 && mc rm -r --force local/lakehouse/checkpoints || true && mc mb -p local/lakehouse/checkpoints"
+Reiniciar Spark y Flask:
+docker compose restart spark flask
+Esperar: 1-2 minutos
+Comprobar Spark:
+docker compose logs spark --tail 150
+Debe aparecer:
+Streaming arrancado. Esperando mensajes en Kafka...
+o:
+Batch vacío, esperando mensajes...
 
-- Install python libraries for Apache Airflow (suggested Python 3.7)
+1.7. Probar Docker local
+Abrir en el navegador:
+http://127.0.0.1:5001/flights/delays/predict_kafka
+Rellenar el formulario de predicción y pulsar Submit, en el botón naranja:
+Comprobar que Cassandra ha guardado la predicción:
+docker exec -it cassandra-flight-docker cqlsh -e "SELECT uuid, origin, dest, carrier, route, distance, prediction, timestamp FROM agile_data_science.flight_delay_ml_response;"
+Debe aparecer al menos una fila con la predicción.
+Antes de pasar a Kubernetes local, parar Docker local para liberar recursos:
+docker compose down
 
-```shell
-cd resources/airflow
-pip install -r requirements.txt -c constraints.txt
-```
-- Set the `PROJECT_HOME` env variable with the path of you cloned repository, for example:
-```
-export PROJECT_HOME=/home/user/Desktop/practica_creativa
-```
-- Configure airflow environment
+2. Kubernetes local
+Web final:
+http://127.0.0.1:5002/flights/delays/predict_kafka
+Todos los comandos de este apartado se ejecutan desde la terminal, dentro de practica_creativa.
 
-```shell
-export AIRFLOW_HOME=~/airflow
-mkdir $AIRFLOW_HOME/dags
-mkdir $AIRFLOW_HOME/logs
-mkdir $AIRFLOW_HOME/plugins
+2.1. Cambiar a Kubernetes local
+kubectl config use-context docker-desktop
+Comprobar nodo:
+kubectl get nodes
+Debe aparecer un nodo en estado:
+Ready
+2.2. Crear registry local y subir imágenes
+Crear registry local:
+docker run -d -p 5000:5000 --restart=always --name local-registry registry:2 || docker start local-registry
+Etiquetar imágenes:
+docker tag practica_creativa-flask:latest localhost:5000/practica_creativa-flask:visual-local
+docker tag practica_creativa-spark:latest localhost:5000/practica_creativa-spark:latest
+Subir imágenes:
+docker push localhost:5000/practica_creativa-flask:visual-local
+docker push localhost:5000/practica_creativa-spark:latest
 
-airflow users create \
-    --username admin \
-    --firstname Jack \
-    --lastname  Sparrow\
-    --role Admin \
-    --email example@mail.org
-```
-- Start airflow scheduler and webserver
-```shell
-airflow webserver --port 8080
-airflow sheduler
-```
-Vistit http://localhost:8080/home for the web version of Apache Airflow.
+2.3. Aplicar Kubernetes local
+Aplicar manifiestos:
+kubectl apply -f ./k8s/01-infra.yml
+kubectl apply -f ./k8s/02-app.yml
+Parar Flask y Spark inmediatamente para preparar primero Cassandra, MinIO y Kafka:
+kubectl scale deployment flask -n flight-stack --replicas=0
+kubectl scale deployment spark-streaming -n flight-stack --replicas=0
+Actualizar imágenes:
+kubectl set image deployment/flask flask=localhost:5000/practica_creativa-flask:visual-local -n flight-stack
+kubectl set image deployment/spark-streaming spark-streaming=localhost:5000/practica_creativa-spark:latest -n flight-stack
+Esperar: 1-2 minutos
+Comprobar pods:
+kubectl get pods -n flight-stack
+Deben aparecer los servicios principales:
+cassandra
+kafka
+minio
+zookeeper
+2.4. Arreglar/estabilizar Kafka
+Parar Kafka:
+kubectl scale deployment kafka -n flight-stack --replicas=0
+Aplicar ajuste:
+kubectl patch deployment kafka -n flight-stack --type strategic -p '{"spec":{"template":{"spec":{"enableServiceLinks":false}}}}'
+Levantar Kafka:
+kubectl scale deployment kafka -n flight-stack --replicas=1
+Esperar: 1 minuto
+Comprobar:
+kubectl get pods -n flight-stack
+Kafka debe aparecer:
+1/1 Running
 
-- The DAG is defined in `resources/airflow/setup.py`.
-- **TODO**: add the DAG and execute it to train the model (see the official documentation of Apache Airflow to learn how to exectue and add a DAG with the airflow command).
-- **TODO**: explain the architecture of apache airflow (see the official documentation of Apache Airflow).
-- **TODO**: analyzing the setup.py: what happens if the task fails?, what is the peridocity of the task?
+2.5. Preparar Cassandra en Kubernetes local
+Crear keyspace:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "CREATE KEYSPACE IF NOT EXISTS agile_data_science WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
+Crear tabla de predicciones:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "CREATE TABLE IF NOT EXISTS agile_data_science.flight_delay_ml_response (uuid text PRIMARY KEY, origin text, dest text, carrier text, route text, distance double, prediction text, timestamp text, day_of_month int, day_of_week int, day_of_year int, dep_delay double, flight_date text);"
+Crear tabla de distancias:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "CREATE TABLE IF NOT EXISTS agile_data_science.flight_distances (origin text, dest text, distance double, PRIMARY KEY (origin, dest));"
+Insertar distancias:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('ATL', 'SFO', 2139);"
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('SFO', 'ATL', 2139);"
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('JFK', 'LAX', 2475);"
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('LAX', 'JFK', 2475);"
+Comprobar tablas:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -k agile_data_science -e "DESCRIBE TABLES;"
+Debe aparecer:
+flight_delay_ml_response
+flight_distances
+Levantar Flask:
+kubectl scale deployment flask -n flight-stack --replicas=1
+Esperar: 30-60 segundos
+Comprobar Flask:
+kubectl get pods -n flight-stack
+Flask debe aparecer:
+1/1 Running
+Comprobar que Flask tiene la web nueva:
+kubectl exec -it -n flight-stack deployment/flask -- grep -n "Flight Delay Control Tower\|history-toggle" /app/resources/web/templates/flight_delays_predict_kafka.html
+Debe aparecer:
+Flight Delay Control Tower
+history-toggle
 
-![Apache Airflow DAG success](images/airflow.jpeg)
+2.6. Preparar MinIO en Kubernetes local
+Crear bucket y carpetas:
+kubectl exec -it -n flight-stack deployment/minio -- sh -c "mc alias set local http://localhost:9000 admin password123 && mc mb -p local/lakehouse && mc mb -p local/lakehouse/models && mc mb -p local/lakehouse/checkpoints"
+Abrir otra terminal.
+Si se usa Windows, entrar en WSL:
+wsl
+Entrar de nuevo en la carpeta del proyecto:
+cd practica_creativa
+Abrir port-forward de MinIO y dejar esta terminal abierta:
+kubectl port-forward -n flight-stack svc/minio 9001:9000
+Abrir otra terminal.
+Si se usa Windows, entrar en WSL:
+wsl
+Entrar de nuevo en la carpeta del proyecto:
+cd practica_creativa
+Subir modelos:
+rm -f mc
+curl -L https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
+chmod +x mc
+./mc alias set local http://127.0.0.1:9001 admin password123
+./mc rm -r --force local/lakehouse/models
+./mc mb -p local/lakehouse/models
+./mc cp -r models/* local/lakehouse/models/
+./mc ls local/lakehouse/models/
+Deben aparecer:
+arrival_bucketizer_2.0.bin/
+numeric_vector_assembler.bin/
+spark_random_forest_classifier.flight_delays.5.0.bin/
+string_indexer_model_Carrier.bin/
+string_indexer_model_Dest.bin/
+string_indexer_model_Origin.bin/
+string_indexer_model_Route.bin/
+Cerrar la terminal del port-forward de MinIO.
+2.7. Preparar topics Kafka en Kubernetes local
+Obtener pod exacto de Kafka:
+KAFKA_POD=$(kubectl get pod -n flight-stack -l app=kafka -o jsonpath='{.items[0].metadata.name}')
+echo $KAFKA_POD
+Crear topics:
+kubectl exec -it -n flight-stack $KAFKA_POD -c kafka -- kafka-topics --bootstrap-server localhost:29092 --create --if-not-exists --topic flight-delay-ml-request --partitions 1 --replication-factor 1
+kubectl exec -it -n flight-stack $KAFKA_POD -c kafka -- kafka-topics --bootstrap-server localhost:29092 --create --if-not-exists --topic flight-delay-ml-response --partitions 1 --replication-factor 1
+Comprobar topics:
+kubectl exec -it -n flight-stack $KAFKA_POD -c kafka -- kafka-topics --bootstrap-server localhost:29092 --list
+Debe aparecer:
+flight-delay-ml-request
+flight-delay-ml-response
+
+2.8. Limpiar checkpoints y levantar Spark
+Limpiar checkpoints:
+kubectl exec -it -n flight-stack deployment/minio -- sh -c "mc alias set local http://localhost:9000 admin password123 && mc rm -r --force local/lakehouse/checkpoints || true && mc mb -p local/lakehouse/checkpoints"
+Levantar Spark:
+kubectl scale deployment spark-streaming -n flight-stack --replicas=1
+Esperar: 2-4 minutos
+Comprobar Spark:
+kubectl get pods -n flight-stack
+Spark debe aparecer:
+spark-streaming    1/1 Running
+Comprobar logs:
+kubectl logs -n flight-stack deployment/spark-streaming --tail 150
+Debe aparecer:
+Streaming arrancado. Esperando mensajes en Kafka...
+o:
+Batch vacío, esperando mensajes...
+
+2.9. Probar Kubernetes local
+Abrir port-forward de Flask:
+kubectl port-forward -n flight-stack svc/flask 5002:5001
+Dejar esa terminal abierta.
+Abrir en el navegador:
+http://127.0.0.1:5002/flights/delays/predict_kafka
+Rellenar el formulario de predicción y pulsar Submit, igual, en el botón naranja.
+Comprobar Cassandra:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "SELECT uuid, origin, dest, carrier, route, distance, prediction, timestamp FROM agile_data_science.flight_delay_ml_response;"
+Debe aparecer al menos una predicción.
+3. Docker en Google Cloud
+VM:
+ibdn-docker-vm
+Web final:
+http://EXTERNAL_IP_VM:5001/flights/delays/predict_kafka
+
+3.1. Arrancar VM
+Desde terminal local:
+gcloud compute instances start ibdn-docker-vm --zone=europe-west1-b
+Esperar: 1-2 minutos
+Comprobar VM:
+gcloud compute instances list
+Debe aparecer:
+ibdn-docker-vm    RUNNING
+Apuntar la IP pública de la columna:
+EXTERNAL_IP
+
+3.2. Entrar en la VM
+gcloud compute ssh ibdn-docker-vm --zone=europe-west1-b
+Dentro de la VM:
+cd ~/practica_creativa
+
+3.3. Levantar Docker en la VM
+docker compose up -d
+Esperar: 2-5 minutos
+Comprobar:
+docker compose ps
+Deben aparecer Up:
+cassandra-flight-docker
+flight-flask
+flight-kafka
+flight-spark-streaming
+flight-zookeeper
+minio-lakehouse-docker
+Si Kafka o Spark no aparecen como Up, ejecutar:
+docker compose up -d
+Esperar 1 minuto y volver a comprobar:
+docker compose ps
+
+3.4. Preparar Cassandra en la VM
+docker exec -it cassandra-flight-docker cqlsh -e "CREATE KEYSPACE IF NOT EXISTS agile_data_science WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
+docker exec -it cassandra-flight-docker cqlsh -e "CREATE TABLE IF NOT EXISTS agile_data_science.flight_delay_ml_response (uuid text PRIMARY KEY, origin text, dest text, carrier text, route text, distance double, prediction text, timestamp text, day_of_month int, day_of_week int, day_of_year int, dep_delay double, flight_date text);"
+docker exec -it cassandra-flight-docker cqlsh -e "CREATE TABLE IF NOT EXISTS agile_data_science.flight_distances (origin text, dest text, distance double, PRIMARY KEY (origin, dest));"
+docker exec -it cassandra-flight-docker cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('ATL', 'SFO', 2139);"
+docker exec -it cassandra-flight-docker cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('SFO', 'ATL', 2139);"
+docker exec -it cassandra-flight-docker cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('JFK', 'LAX', 2475);"
+docker exec -it cassandra-flight-docker cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('LAX', 'JFK', 2475);"
+Comprobar tablas:
+docker exec -it cassandra-flight-docker cqlsh -k agile_data_science -e "DESCRIBE TABLES;"
+
+3.5. Preparar MinIO y Kafka en la VM
+docker run --rm --network practica_creativa_default --entrypoint /bin/sh minio/mc -c "mc alias set local http://minio:9000 admin password123 && mc mb -p local/lakehouse && mc mb -p local/lakehouse/models && mc mb -p local/lakehouse/checkpoints"
+docker run --rm --network practica_creativa_default -v "$(pwd)/models:/models" --entrypoint /bin/sh minio/mc -c "mc alias set local http://minio:9000 admin password123 && mc cp -r /models/* local/lakehouse/models/"
+Asegurar Kafka:
+docker compose up -d zookeeper kafka
+Esperar: 1 minuto
+Crear topics:
+docker exec -it flight-kafka kafka-topics --bootstrap-server flight-kafka:29092 --create --if-not-exists --topic flight-delay-ml-request --partitions 1 --replication-factor 1
+docker exec -it flight-kafka kafka-topics --bootstrap-server flight-kafka:29092 --create --if-not-exists --topic flight-delay-ml-response --partitions 1 --replication-factor 1
+Comprobar:
+docker exec -it flight-kafka kafka-topics --bootstrap-server flight-kafka:29092 --list
+Debe aparecer:
+flight-delay-ml-request
+flight-delay-ml-response
+
+3.6. Limpiar checkpoints y reiniciar Spark/Flask en la VM
+docker run --rm --network practica_creativa_default --entrypoint /bin/sh minio/mc -c "mc alias set local http://minio:9000 admin password123 && mc rm -r --force local/lakehouse/checkpoints || true && mc mb -p local/lakehouse/checkpoints"
+docker compose restart spark flask
+Esperar: 1-2 minutos
+Comprobar Spark:
+docker compose logs spark --tail 150
+Debe aparecer:
+Streaming arrancado. Esperando mensajes en Kafka...
+
+3.7. Probar Docker en Google Cloud
+Abrir en el navegador:
+http://EXTERNAL_IP_VM:5001/flights/delays/predict_kafka
+Rellenar el formulario de predicción y pulsar Submit, igual que con los otros.
+Comprobar Cassandra:
+docker exec -it cassandra-flight-docker cqlsh -e "SELECT uuid, origin, dest, carrier, route, distance, prediction, timestamp FROM agile_data_science.flight_delay_ml_response;"
+Salir de la VM:
+exit
+4. Kubernetes en Google Cloud
+Web final:
+http://EXTERNAL_IP_LOADBALANCER:5001/flights/delays/predict_kafka
+Todos los comandos de este apartado se ejecutan desde terminal local, dentro de practica_creativa
+
+4.1. Conectar con GKE
+gcloud container clusters get-credentials ibdn-flight-cluster --zone europe-west1-b --project ibdn-flight-stack-alvaro
+Comprobar contexto:
+kubectl config current-context
+Debe salir:
+gke_ibdn-flight-stack-alvaro_europe-west1-b_ibdn-flight-cluster
+Comprobar nodos:
+kubectl get nodes
+Deben aparecer nodos gke-...
+4.2. Definir imágenes
+PROJECT_ID=ibdn-flight-stack-alvaro
+REGION=europe-west1
+REPO=ibdn-docker
+TAG=visual-v1
+
+4.3. Aplicar Kubernetes en GKE
+kubectl apply -f ./k8s/01-infra.yml
+kubectl apply -f ./k8s/02-app.yml
+Parar Flask y Spark inmediatamente para preparar primero Cassandra, MinIO y Kafka:
+kubectl scale deployment flask -n flight-stack --replicas=0
+kubectl scale deployment spark-streaming -n flight-stack --replicas=0
+Actualizar imágenes:
+kubectl set image deployment/flask flask=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/practica_creativa-flask:$TAG -n flight-stack
+kubectl set image deployment/spark-streaming spark-streaming=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/practica_creativa-spark:$TAG -n flight-stack
+Esperar: 1-2 minutos
+Comprobar pods:
+kubectl get pods -n flight-stack
+Deben aparecer:
+cassandra
+kafka
+minio
+zookeeper
+
+4.4. Estabilizar Kafka en GKE
+Parar Kafka:
+kubectl scale deployment kafka -n flight-stack --replicas=0
+Aplicar ajuste:
+kubectl patch deployment kafka -n flight-stack --type strategic -p '{"spec":{"template":{"spec":{"enableServiceLinks":false}}}}'
+Levantar Kafka:
+kubectl scale deployment kafka -n flight-stack --replicas=1
+Esperar: 1 minuto
+Comprobar:
+kubectl get pods -n flight-stack
+Kafka debe aparecer:
+1/1 Running
+
+4.5. Preparar Cassandra en GKE
+Crear keyspace y tablas:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "CREATE KEYSPACE IF NOT EXISTS agile_data_science WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "CREATE TABLE IF NOT EXISTS agile_data_science.flight_delay_ml_response (uuid text PRIMARY KEY, origin text, dest text, carrier text, route text, distance double, prediction text, timestamp text, day_of_month int, day_of_week int, day_of_year int, dep_delay double, flight_date text);"
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "CREATE TABLE IF NOT EXISTS agile_data_science.flight_distances (origin text, dest text, distance double, PRIMARY KEY (origin, dest));"
+Insertar distancias:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('ATL', 'SFO', 2139);"
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('SFO', 'ATL', 2139);"
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('JFK', 'LAX', 2475);"
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "INSERT INTO agile_data_science.flight_distances (origin, dest, distance) VALUES ('LAX', 'JFK', 2475);"
+Comprobar tablas:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -k agile_data_science -e "DESCRIBE TABLES;"
+Levantar Flask:
+kubectl scale deployment flask -n flight-stack --replicas=1
+Esperar: 30-60 segundos
+
+4.6. Preparar MinIO en GKE
+Crear bucket y carpetas:
+kubectl exec -it -n flight-stack deployment/minio -- sh -c "mc alias set local http://localhost:9000 admin password123 && mc mb -p local/lakehouse && mc mb -p local/lakehouse/models && mc mb -p local/lakehouse/checkpoints"
+Abrir otra terminal.
+Si se usa Windows, entrar en WSL:
+wsl
+Entrar de nuevo en la carpeta del proyecto:
+cd practica_creativa
+Abrir port-forward de MinIO y dejar esta terminal abierta:
+kubectl port-forward -n flight-stack svc/minio 9001:9000
+Abrir otra terminal.
+Si se usa Windows, entrar en WSL:
+wsl
+Entrar de nuevo en la carpeta del proyecto:
+cd practica_creativa
+Subir modelos:
+rm -f mc
+curl -L https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
+chmod +x mc
+./mc alias set local http://127.0.0.1:9001 admin password123
+./mc rm -r --force local/lakehouse/models
+./mc mb -p local/lakehouse/models
+./mc cp -r models/* local/lakehouse/models/
+./mc ls local/lakehouse/models/
+Cerrar port-forward de MinIO.
+4.7. Preparar Kafka topics en GKE
+Obtener pod exacto:
+KAFKA_POD=$(kubectl get pod -n flight-stack -l app=kafka -o jsonpath='{.items[0].metadata.name}')
+echo $KAFKA_POD
+Crear topics:
+kubectl exec -it -n flight-stack $KAFKA_POD -c kafka -- kafka-topics --bootstrap-server localhost:29092 --create --if-not-exists --topic flight-delay-ml-request --partitions 1 --replication-factor 1
+kubectl exec -it -n flight-stack $KAFKA_POD -c kafka -- kafka-topics --bootstrap-server localhost:29092 --create --if-not-exists --topic flight-delay-ml-response --partitions 1 --replication-factor 1
+Comprobar topics:
+kubectl exec -it -n flight-stack $KAFKA_POD -c kafka -- kafka-topics --bootstrap-server localhost:29092 --list
+Debe aparecer:
+flight-delay-ml-request
+flight-delay-ml-response
+
+4.8. Limpiar checkpoints y levantar Spark en GKE
+Limpiar checkpoints:
+kubectl exec -it -n flight-stack deployment/minio -- sh -c "mc alias set local http://localhost:9000 admin password123 && mc rm -r --force local/lakehouse/checkpoints || true && mc mb -p local/lakehouse/checkpoints"
+Levantar Spark:
+kubectl scale deployment spark-streaming -n flight-stack --replicas=1
+Esperar: 2-4 minutos
+Comprobar Spark:
+kubectl logs -n flight-stack deployment/spark-streaming --tail 150
+Debe aparecer:
+Streaming arrancado. Esperando mensajes en Kafka...
+
+4.9. Exponer web GKE
+kubectl patch svc flask -n flight-stack -p '{"spec":{"type":"LoadBalancer"}}'
+Comprobar IP pública:
+kubectl get svc flask -n flight-stack
+Al principio puede aparecer:
+EXTERNAL-IP   <pending>
+Esperar: 1-5 minutos
+Volver a comprobar:
+kubectl get svc flask -n flight-stack
+Cuando aparezca una IP pública, abrir en navegador:
+http://EXTERNAL_IP_LOADBALANCER:5001/flights/delays/predict_kafka
+Rellenar el formulario de predicción y pulsar Submit, en el botón naranja.
+Comprobar Cassandra:
+kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "SELECT uuid, origin, dest, carrier, route, distance, prediction, timestamp FROM agile_data_science.flight_delay_ml_response;"
+Debe aparecer al menos una predicción.
 
 
-
-## Evaluation
-
-### First stage
-Evaluation in class where the student/pair hast to show de basic deployment working (only the prediction phase)
-
-### Second stage
-
-One member of the pair must upload the compressed code in a .zip file, **WITHOUT the folders models/, flight_prediction/target, and data/**. Inside the zip file, **a PDF must be included indicating the members of the pair and which parts of the assignment have been completed (not how they were done)**. Maximum length: one page.
-
-Although the submission deadline is January 10th, we recommend finishing it before the written exam, as some questions may be related to the final project. The project will be assessed orally in the following weeks. Time slots will be opened close to the date, and if anyone wishes to do it earlier, they should contact the course coordinator’s email.
-
-Several notes:
-
-1) The project must work correctly; otherwise, it will be graded with a 0. The same applies to each improvement. If an improvement is incomplete, it will be graded with a 0.
-
-2) A minimum grade of 5 out of 10 is required to pass the course.
-
-3) The project and the oral exam can be done in pairs, but the grade will be individual. This means that questions will be asked to both members of the pair, and if they are not answered adequately, the project will not be passed.
-
-
-
-
+Si quiere ver las anteriores predicciones puede pulsar el botón ‘Ver anteriores predicciones’ y se ven.
