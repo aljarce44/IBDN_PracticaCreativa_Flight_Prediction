@@ -120,7 +120,8 @@ gcloud config get-value compute/region
 gcloud config get-value compute/zone
 ```
 
-Debe salir:
+Si se usa el proyecto original de la práctica, debe salir:
+(Sino ignorar y hay una nota antes del paso 3 que explica lo que hay que hacer)
 
 ```text
 ibdn-flight-stack-alvaro
