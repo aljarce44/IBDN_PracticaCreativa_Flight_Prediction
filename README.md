@@ -65,8 +65,8 @@ Python: 3.12
 MinIO: latest
 ```
 
-En Google Cloud debe existir:
-
+En Google Cloud debe existir lo siguiente si se usa el proyecto original de la práctica:
+(Si no existe al empezar los apartados están las explicaciones para continuar)
 ```text
 Proyecto: ibdn-flight-stack-alvaro
 Zona: europe-west1-b
@@ -786,6 +786,266 @@ kubectl exec -it -n flight-stack deployment/cassandra -- cqlsh -e "SELECT uuid, 
 Debe aparecer al menos una predicción.
 
 ---
+---
+
+# Nota para ejecutar Google Cloud en otro proyecto
+
+Los apartados **3. Docker en Google Cloud** y **4. Kubernetes en Google Cloud** están preparados para el proyecto usado en esta práctica:
+
+```text
+Proyecto: ibdn-flight-stack-alvaro
+Zona: europe-west1-b
+VM Docker: ibdn-docker-vm
+Cluster GKE: ibdn-flight-cluster
+Artifact Registry: europe-west1-docker.pkg.dev/ibdn-flight-stack-alvaro/ibdn-docker
+```
+
+Si se quiere ejecutar en otro proyecto de Google Cloud, hay que crear recursos equivalentes y cambiar las variables del README por las del nuevo proyecto.
+
+Esta sección permite reproducir el despliegue en un proyecto de Google Cloud distinto al original, siempre que el usuario tenga permisos suficientes, facturación activa y cuotas disponibles.
+
+La estructura es la siguiente:
+
+```text
+A. Configurar proyecto de Google Cloud
+B. Crear Artifact Registry y subir imágenes
+C. Crear VM si se quiere ejecutar el apartado 3: Docker en Google Cloud
+D. Crear clúster GKE si se quiere ejecutar el apartado 4: Kubernetes en Google Cloud
+```
+
+---
+
+## A. Configurar proyecto de Google Cloud
+
+El usuario debe iniciar sesión en Google Cloud:
+
+```bash
+gcloud auth login
+```
+
+Seleccionar su proyecto:
+
+```bash
+gcloud config set project SU_PROJECT_ID
+gcloud config set compute/region europe-west1
+gcloud config set compute/zone europe-west1-b
+```
+
+Comprobar configuración:
+
+```bash
+gcloud config get-value project
+gcloud config get-value compute/region
+gcloud config get-value compute/zone
+```
+
+Activar las APIs necesarias:
+
+```bash
+gcloud services enable compute.googleapis.com
+gcloud services enable container.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
+```
+
+---
+
+## B. Crear Artifact Registry y subir imágenes
+
+Este bloque es necesario tanto para el apartado **3. Docker en Google Cloud** como para el apartado **4. Kubernetes en Google Cloud**, porque ambos necesitan las imágenes Docker del proyecto.
+
+Crear un repositorio Docker para subir las imágenes:
+
+```bash
+gcloud artifacts repositories create ibdn-docker \
+  --repository-format=docker \
+  --location=europe-west1 \
+  --description="Repositorio Docker para la practica IBDN"
+```
+
+Configurar Docker para poder subir imágenes a Artifact Registry:
+
+```bash
+gcloud auth configure-docker europe-west1-docker.pkg.dev
+```
+
+Definir variables:
+
+```bash
+PROJECT_ID=SU_PROJECT_ID
+REGION=europe-west1
+REPO=ibdn-docker
+TAG=visual-v1
+```
+
+Construir imágenes desde la carpeta `practica_creativa`:
+
+```bash
+docker compose build flask
+docker compose build spark
+```
+
+Etiquetar imágenes:
+
+```bash
+docker tag practica_creativa-flask:latest $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/practica_creativa-flask:$TAG
+docker tag practica_creativa-spark:latest $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/practica_creativa-spark:$TAG
+```
+
+Subir imágenes:
+
+```bash
+docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/practica_creativa-flask:$TAG
+docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/practica_creativa-spark:$TAG
+```
+
+---
+
+## C. Crear VM para ejecutar el apartado 3: Docker en Google Cloud
+
+Este bloque solo es necesario si se quiere ejecutar el apartado **3. Docker en Google Cloud** en un proyecto distinto al original.
+
+Crear una VM equivalente a la usada en la práctica:
+
+```bash
+gcloud compute instances create ibdn-docker-vm \
+  --zone=europe-west1-b \
+  --machine-type=e2-standard-4 \
+  --image-family=ubuntu-2204-lts \
+  --image-project=ubuntu-os-cloud \
+  --boot-disk-size=50GB \
+  --tags=http-server
+```
+
+Abrir el puerto de Flask:
+
+```bash
+gcloud compute firewall-rules create allow-flask-5001 \
+  --allow tcp:5001 \
+  --target-tags=http-server \
+  --description="Permitir acceso a Flask en el puerto 5001"
+```
+
+Entrar en la VM:
+
+```bash
+gcloud compute ssh ibdn-docker-vm --zone=europe-west1-b
+```
+
+Instalar Docker dentro de la VM:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin git
+sudo usermod -aG docker $USER
+```
+
+Salir y volver a entrar para que se apliquen los permisos de Docker:
+
+```bash
+exit
+```
+
+```bash
+gcloud compute ssh ibdn-docker-vm --zone=europe-west1-b
+```
+
+Clonar el proyecto dentro de la VM:
+
+```bash
+git clone https://github.com/aljarce44/IBDN_PracticaCreativa_Flight_Prediction.git practica_creativa
+cd practica_creativa
+```
+
+A partir de aquí se puede seguir el apartado **3. Docker en Google Cloud** del README.
+
+En ese apartado, si se está usando otro proyecto de Google Cloud, sustituir las referencias al proyecto original por el nuevo proyecto.
+
+---
+
+## D. Crear clúster GKE para ejecutar el apartado 4: Kubernetes en Google Cloud
+
+Este bloque solo es necesario si se quiere ejecutar el apartado **4. Kubernetes en Google Cloud** en un proyecto distinto al original.
+
+Crear un clúster GKE equivalente:
+
+```bash
+gcloud container clusters create ibdn-flight-cluster \
+  --zone=europe-west1-b \
+  --num-nodes=2 \
+  --machine-type=e2-standard-4 \
+  --disk-size=50
+```
+
+Conectarse al clúster:
+
+```bash
+gcloud container clusters get-credentials ibdn-flight-cluster \
+  --zone europe-west1-b \
+  --project SU_PROJECT_ID
+```
+
+Comprobar nodos:
+
+```bash
+kubectl get nodes
+```
+
+Deben aparecer nodos `gke-...` en estado `Ready`.
+
+Definir variables para usar las imágenes del nuevo Artifact Registry:
+
+```bash
+PROJECT_ID=SU_PROJECT_ID
+REGION=europe-west1
+REPO=ibdn-docker
+TAG=visual-v1
+```
+
+A partir de aquí se puede seguir el apartado **4. Kubernetes en Google Cloud** del README.
+
+En ese apartado, sustituir:
+
+```text
+ibdn-flight-stack-alvaro
+```
+
+por:
+
+```text
+SU_PROJECT_ID
+```
+
+y usar las imágenes del nuevo Artifact Registry:
+
+```text
+europe-west1-docker.pkg.dev/SU_PROJECT_ID/ibdn-docker/practica_creativa-flask:visual-v1
+europe-west1-docker.pkg.dev/SU_PROJECT_ID/ibdn-docker/practica_creativa-spark:visual-v1
+```
+
+---
+
+## Resumen
+
+Si el usuario tiene acceso al proyecto original `ibdn-flight-stack-alvaro`, puede ejecutar directamente los apartados **3** y **4** del README.
+
+Si usa otro proyecto de Google Cloud, debe hacer antes:
+
+```text
+A. Configurar proyecto de Google Cloud
+B. Crear Artifact Registry y subir imágenes
+C. Crear VM si quiere ejecutar Docker en Google Cloud
+D. Crear clúster GKE si quiere ejecutar Kubernetes en Google Cloud
+```
+
+Después debe sustituir en el README:
+
+```text
+ibdn-flight-stack-alvaro
+```
+
+por su propio `PROJECT_ID`.
+
+
 
 # 3. Docker en Google Cloud
 
