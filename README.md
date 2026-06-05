@@ -813,22 +813,87 @@ C. Crear VM si se quiere ejecutar el apartado 3: Docker en Google Cloud
 D. Crear clúster GKE si se quiere ejecutar el apartado 4: Kubernetes en Google Cloud
 ```
 
----
-
 ## A. Configurar proyecto de Google Cloud
 
-El usuario debe iniciar sesión en Google Cloud:
+Antes de ejecutar estos comandos, el usuario debe tener un proyecto de Google Cloud creado y con facturación activa.
+
+Si todavía no tiene un proyecto, debe crearlo desde la consola web de Google Cloud y activar la facturación. Después podrá continuar desde la terminal.
+
+Iniciar sesión en Google Cloud:
 
 ```bash
 gcloud auth login
 ```
 
-Seleccionar su proyecto:
+Consultar los proyectos disponibles en la cuenta:
+
+```bash
+gcloud projects list
+```
+
+En la salida anterior, el usuario debe copiar el valor de la columna `PROJECT_ID` del proyecto que quiera usar.
+
+Por ejemplo, puede aparecer algo parecido a:
+
+```text
+PROJECT_ID              NAME                  PROJECT_NUMBER
+mi-proyecto-ibdn        Proyecto IBDN         123456789
+```
+
+En ese caso, el valor que debe usarse como `SU_PROJECT_ID` sería:
+
+```text
+mi-proyecto-ibdn
+```
+
+Seleccionar el proyecto de Google Cloud:
 
 ```bash
 gcloud config set project SU_PROJECT_ID
+```
+
+Configurar región y zona:
+
+```bash
 gcloud config set compute/region europe-west1
 gcloud config set compute/zone europe-west1-b
+```
+
+Comprobar que la configuración se ha aplicado correctamente:
+
+```bash
+gcloud config get-value project
+gcloud config get-value compute/region
+gcloud config get-value compute/zone
+```
+
+Debe aparecer el `PROJECT_ID` elegido por el usuario, junto con:
+
+```text
+europe-west1
+europe-west1-b
+```
+
+Activar las APIs necesarias para Compute Engine, GKE y Artifact Registry:
+
+```bash
+gcloud services enable compute.googleapis.com
+gcloud services enable container.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
+```
+
+A partir de este punto, cada vez que en el README aparezca `SU_PROJECT_ID`, debe sustituirse por el `PROJECT_ID` real del proyecto de Google Cloud del usuario.
+
+Por ejemplo, si el proyecto elegido es `mi-proyecto-ibdn`, entonces:
+
+```bash
+gcloud config set project SU_PROJECT_ID
+```
+
+debe ejecutarse como:
+
+```bash
+gcloud config set project mi-proyecto-ibdn
 ```
 
 Comprobar configuración:
