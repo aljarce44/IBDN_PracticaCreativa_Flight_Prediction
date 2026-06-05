@@ -1,0 +1,7 @@
+[0m[[0m[31merror[0m] [0m[0mC:\Users\jimen\OneDrive\3ºIySD\IBDN\practica_creativa\flight_prediction\src\main\scala\es\upm\dit\ging\predictor\MakePrediction.scala:106:8: overloaded method value foreachBatch with alternatives:[0m
+[0m[[0m[31merror[0m] [0m[0m  (function: org.apache.spark.api.java.function.VoidFunction2[org.apache.spark.sql.Dataset[org.apache.spark.sql.Row],java.lang.Long])org.apache.spark.sql.streaming.DataStreamWriter[org.apache.spark.sql.Row] <and>[0m
+[0m[[0m[31merror[0m] [0m[0m  (function: (org.apache.spark.sql.Dataset[org.apache.spark.sql.Row], scala.Long) => Unit)org.apache.spark.sql.streaming.DataStreamWriter[org.apache.spark.sql.Row][0m
+[0m[[0m[31merror[0m] [0m[0m cannot be applied to ((org.apache.spark.sql.Dataset[org.apache.spark.sql.Row], scala.Long) => Any)[0m
+[0m[[0m[31merror[0m] [0m[0m      .foreachBatch { (batchDF: Dataset[Row], batchId: Long) =>[0m
+[0m[[0m[31merror[0m] [0m[0m       ^[0m
+[0m[[0m[31merror[0m] [0m[0mone error found[0m

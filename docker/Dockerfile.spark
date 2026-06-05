@@ -1,0 +1,23 @@
+FROM apache/spark:3.5.3
+
+USER root
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /app
+
+RUN pip3 install \
+    kafka-python \
+    cassandra-driver \
+    iso8601 \
+    boto3 \
+    pandas \
+    numpy \
+    scikit-learn
+
+WORKDIR /app

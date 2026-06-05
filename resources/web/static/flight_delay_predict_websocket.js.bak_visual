@@ -1,0 +1,148 @@
+const socket = io();
+
+let currentPredictionId = null;
+
+function renderWaiting(id) {
+  const resultDiv = document.getElementById("result");
+
+  resultDiv.innerHTML = `
+    <div class="alert alert-info">
+      Mensaje enviado a Kafka. Esperando predicción por WebSocket...<br>
+      <small>ID: ${id}</small>
+    </div>
+  `;
+}
+
+function renderPrediction(prediction) {
+  const predictionValue = Number(
+    prediction.Prediction ?? prediction.prediction
+  );
+
+  let predictionText = "Unknown";
+
+  if (predictionValue === 0) {
+    predictionText = "Early / No Delay";
+  } else if (predictionValue === 1) {
+    predictionText = "On Time";
+  } else if (predictionValue === 2) {
+    predictionText = "Slightly Late (0-30 Minute Delay)";
+  } else if (predictionValue === 3) {
+    predictionText = "Very Late (+30 Minute Delay)";
+  }
+
+  const uuid = prediction.UUID ?? prediction.uuid ?? "";
+  const origin = prediction.Origin ?? prediction.origin ?? "";
+  const dest = prediction.Dest ?? prediction.dest ?? "";
+  const carrier = prediction.Carrier ?? prediction.carrier ?? "";
+  const route = prediction.Route ?? prediction.route ?? "";
+  const distance = prediction.Distance ?? prediction.distance ?? "";
+  const timestamp = prediction.Timestamp ?? prediction.timestamp ?? "";
+
+  const resultDiv = document.getElementById("result");
+
+  resultDiv.innerHTML = `
+    <div class="alert alert-success">
+      <h4>${predictionText}</h4>
+      <p><strong>UUID:</strong> ${uuid}</p>
+      <p><strong>Origin:</strong> ${origin}</p>
+      <p><strong>Destination:</strong> ${dest}</p>
+      <p><strong>Carrier:</strong> ${carrier}</p>
+      <p><strong>Route:</strong> ${route}</p>
+      <p><strong>Distance:</strong> ${distance}</p>
+      <p><strong>Prediction:</strong> ${predictionValue}</p>
+      <p><strong>Timestamp:</strong> ${timestamp}</p>
+      <hr>
+      <small>Predicción recibida desde Kafka mediante WebSocket.</small>
+    </div>
+  `;
+}
+
+function renderError(message) {
+  const resultDiv = document.getElementById("result");
+
+  resultDiv.innerHTML = `
+    <div class="alert alert-danger">
+      Error enviando la petición a Kafka: ${message}
+    </div>
+  `;
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  const form = document.getElementById("flight_delay_classification");
+
+  if (!form) {
+    console.error("No se ha encontrado el formulario con id flight_delay_classification");
+    return;
+  }
+
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    const formData = new FormData(form);
+
+    try {
+      const response = await fetch("/flights/delays/predict/classify_realtime", {
+        method: "POST",
+        body: formData
+      });
+
+      const text = await response.text();
+
+      let data;
+
+      try {
+        data = JSON.parse(text);
+      } catch (error) {
+        console.error("Flask ha devuelto HTML o texto en vez de JSON:");
+        console.error(text);
+
+        throw new Error(
+          "Flask ha devuelto HTML en vez de JSON. Revisa la ruta /flights/delays/predict/classify_realtime en predict_flask.py"
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || "Error desconocido en Flask");
+      }
+
+      currentPredictionId = data.id || data.uuid || data.UUID;
+
+      if (!currentPredictionId) {
+        console.error("Respuesta recibida sin id:", data);
+        throw new Error("Flask respondió bien, pero no devolvió ningún id/uuid");
+      }
+
+      socket.emit("join", { id: currentPredictionId });
+
+      renderWaiting(currentPredictionId);
+
+    } catch (error) {
+      console.error(error);
+      renderError(error.message || error);
+    }
+  });
+});
+
+socket.on("prediction_response", function (prediction) {
+  if (!currentPredictionId) {
+    return;
+  }
+
+  const predictionId = prediction.UUID ?? prediction.uuid;
+
+  if (predictionId === currentPredictionId) {
+    renderPrediction(prediction);
+  }
+});
+
+socket.on("prediction", function (prediction) {
+  if (!currentPredictionId) {
+    return;
+  }
+
+  const predictionId = prediction.UUID ?? prediction.uuid;
+
+  if (predictionId === currentPredictionId) {
+    renderPrediction(prediction);
+  }
+});

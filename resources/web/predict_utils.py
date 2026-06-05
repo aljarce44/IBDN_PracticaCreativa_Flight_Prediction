@@ -32,13 +32,13 @@ def strip_place(url):
   return p
 
 def get_flight_distance(client, origin, dest):
-  """Get the distance between a pair of airport codes"""
-  query = {
-    "Origin": origin,
-    "Dest": dest,
-  }
-  record = client.agile_data_science.origin_dest_distances.find_one(query)
-  return record["Distance"]
+    record = client.agile_data_science.origin_dest_distances.find_one({
+        "Origin": origin,
+        "Dest": dest
+    })
+    if record and "Distance" in record:
+        return record["Distance"]
+    return 1000.0
 
 def get_regression_date_args(iso_date):
   """Given an ISO Date, return the day of year, day of month, day of week as the API expects them."""

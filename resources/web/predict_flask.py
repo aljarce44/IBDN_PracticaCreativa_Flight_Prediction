@@ -1,68 +1,255 @@
-import sys, os, re
-from flask import Flask, render_template, request
-from pymongo import MongoClient
-from bson import json_util
+import eventlet
+eventlet.monkey_patch()
 
-# Configuration details
-import config
-
-# Helpers for search and prediction APIs
-import predict_utils
-
-# Set up Flask, Mongo and Elasticsearch
-app = Flask(__name__)
-
-client = MongoClient()
-
-from pyelasticsearch import ElasticSearch
-elastic = ElasticSearch(config.ELASTIC_URL)
-
+import sys
+import os
+import tempfile
+import subprocess
+import threading
 import json
-
-# Date/time stuff
 import iso8601
 import datetime
-
-# Setup Kafka
-from kafka import KafkaProducer
-producer = KafkaProducer(bootstrap_servers=['localhost:9092'],api_version=(0,10))
-PREDICTION_TOPIC = 'flight-delay-ml-request'
-
 import uuid
+import time
 
-# Chapter 5 controller: Fetch a flight and display it
+from flask import Flask, render_template, request, jsonify
+from pymongo import MongoClient
+from bson import json_util
+from cassandra.cluster import Cluster
+from cassandra.io.eventletreactor import EventletConnection
+from kafka import KafkaConsumer, KafkaProducer
+from flask_socketio import SocketIO, join_room
+
+import config
+import predict_utils
+
+
+app = Flask(__name__)
+
+socketio = SocketIO(
+  app,
+  cors_allowed_origins="*",
+  async_mode="threading"
+)
+
+KAFKA_BOOTSTRAP_SERVERS = os.environ.get(
+  "KAFKA_BOOTSTRAP_SERVERS",
+  "127.0.0.1:9092"
+)
+
+CASSANDRA_HOST = os.environ.get(
+  "CASSANDRA_HOST",
+  "127.0.0.1"
+)
+
+MONGO_HOST = os.environ.get(
+  "MONGO_HOST",
+  "127.0.0.1"
+)
+
+client = MongoClient(MONGO_HOST)
+
+cassandra_cluster = Cluster(
+  [CASSANDRA_HOST],
+  connection_class=EventletConnection
+)
+
+cassandra_session = cassandra_cluster.connect('agile_data_science')
+
+elastic = None
+
+PREDICTION_TOPIC = 'flight-delay-ml-request'
+RESPONSE_TOPIC = 'flight-delay-ml-response'
+
+project_home = os.environ.get(
+  "PROJECT_HOME",
+  r"C:\Users\jimen\OneDrive\3ÂºIySD\IBDN\practica_creativa"
+)
+
+
+def create_kafka_producer():
+  print("Creando KafkaProducer con:", KAFKA_BOOTSTRAP_SERVERS)
+  return KafkaProducer(
+    bootstrap_servers=[KAFKA_BOOTSTRAP_SERVERS],
+    api_version=(3, 4, 1),
+    request_timeout_ms=30000,
+    max_block_ms=30000,
+    retries=3
+  )
+
+
+def send_prediction_to_kafka(prediction_features):
+  producer = create_kafka_producer()
+
+  try:
+    producer.send(
+      PREDICTION_TOPIC,
+      json.dumps(prediction_features).encode("utf-8")
+    )
+    producer.flush()
+  finally:
+    producer.close()
+
+
+def get_flight_distance_cassandra(origin, dest):
+  result = cassandra_session.execute(
+    """
+    SELECT distance
+    FROM flight_distances
+    WHERE origin = %s AND dest = %s
+    """,
+    (origin, dest)
+  )
+
+  row = result.one()
+
+  if row:
+    return float(row.distance)
+
+  return 0.0
+
+
+def prediction_row_to_dict(row):
+  return {
+    "UUID": row.uuid,
+    "Origin": row.origin,
+    "Dest": row.dest,
+    "Carrier": row.carrier,
+    "Route": row.route,
+    "FlightDate": str(row.flight_date),
+    "DayOfWeek": row.day_of_week,
+    "DayOfYear": row.day_of_year,
+    "DayOfMonth": row.day_of_month,
+    "DepDelay": row.dep_delay,
+    "Distance": row.distance,
+    "Prediction": row.prediction,
+    "Timestamp": str(row.timestamp)
+  }
+
+
+def emit_prediction_websocket(prediction):
+  prediction_uuid = prediction.get("UUID")
+
+  if prediction_uuid:
+    socketio.emit(
+      'prediction_response',
+      prediction,
+      room=prediction_uuid,
+      namespace='/'
+    )
+
+  socketio.emit(
+    'prediction_response',
+    prediction,
+    namespace='/'
+  )
+
+  print("PredicciÃ³n enviada por WebSocket:", prediction_uuid)
+
+
+def wait_for_prediction_from_cassandra(unique_id, timeout_seconds=120):
+  print("Esperando predicciÃ³n en Cassandra para UUID:", unique_id)
+
+  start_time = time.time()
+
+  while time.time() - start_time < timeout_seconds:
+    result = cassandra_session.execute(
+      """
+      SELECT uuid, origin, dest, carrier, route, flight_date,
+             day_of_week, day_of_year, day_of_month,
+             dep_delay, distance, prediction, timestamp
+      FROM flight_delay_ml_response
+      WHERE uuid = %s
+      """,
+      (unique_id,)
+    )
+
+    row = result.one()
+
+    if row:
+      prediction = prediction_row_to_dict(row)
+
+      print("PredicciÃ³n encontrada en Cassandra para UUID:", unique_id)
+      print(prediction)
+
+      emit_prediction_websocket(prediction)
+      return
+
+    time.sleep(1)
+
+  print("No se encontrÃ³ predicciÃ³n en Cassandra para UUID:", unique_id)
+
+
+def kafka_response_listener():
+  print("Listener global Kafka arrancado. Escuchando flight-delay-ml-response...")
+  print("Kafka bootstrap servers:", KAFKA_BOOTSTRAP_SERVERS)
+
+  while True:
+    try:
+      consumer = KafkaConsumer(
+        RESPONSE_TOPIC,
+        bootstrap_servers=[KAFKA_BOOTSTRAP_SERVERS],
+        value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+        auto_offset_reset='latest',
+        enable_auto_commit=True,
+        group_id=None,
+        consumer_timeout_ms=1000
+      )
+
+      for message in consumer:
+        prediction = message.value
+
+        print("PredicciÃ³n recibida desde Kafka en Flask:")
+        print(prediction)
+
+        emit_prediction_websocket(prediction)
+
+      consumer.close()
+
+    except Exception as e:
+      print("Error en listener Kafka:", e)
+
+    time.sleep(1)
+
+
 @app.route("/on_time_performance")
 def on_time_performance():
-  
   carrier = request.args.get('Carrier')
   flight_date = request.args.get('FlightDate')
   flight_num = request.args.get('FlightNum')
-  
+
   flight = client.agile_data_science.on_time_performance.find_one({
     'Carrier': carrier,
     'FlightDate': flight_date,
     'FlightNum': flight_num
   })
-  
+
   return render_template('flight.html', flight=flight)
 
-# Chapter 5 controller: Fetch all flights between cities on a given day and display them
+
 @app.route("/flights/<origin>/<dest>/<flight_date>")
 def list_flights(origin, dest, flight_date):
-  
   flights = client.agile_data_science.on_time_performance.find(
     {
       'Origin': origin,
       'Dest': dest,
       'FlightDate': flight_date
     },
-    sort = [
+    sort=[
       ('DepTime', 1),
       ('ArrTime', 1),
     ]
   )
-  flight_count = flights.count()
-  
+
+  try:
+    flight_count = flights.count()
+  except Exception:
+    flight_count = client.agile_data_science.on_time_performance.count_documents({
+      'Origin': origin,
+      'Dest': dest,
+      'FlightDate': flight_date
+    })
+
   return render_template(
     'flights.html',
     flights=flights,
@@ -70,40 +257,49 @@ def list_flights(origin, dest, flight_date):
     flight_count=flight_count
   )
 
-# Controller: Fetch a flight table
+
 @app.route("/total_flights")
 def total_flights():
-  total_flights = client.agile_data_science.flights_by_month.find({}, 
-    sort = [
+  total_flights = client.agile_data_science.flights_by_month.find(
+    {},
+    sort=[
       ('Year', 1),
       ('Month', 1)
-    ])
+    ]
+  )
+
   return render_template('total_flights.html', total_flights=total_flights)
 
-# Serve the chart's data via an asynchronous request (formerly known as 'AJAX')
+
 @app.route("/total_flights.json")
 def total_flights_json():
-  total_flights = client.agile_data_science.flights_by_month.find({}, 
-    sort = [
+  total_flights = client.agile_data_science.flights_by_month.find(
+    {},
+    sort=[
       ('Year', 1),
       ('Month', 1)
-    ])
+    ]
+  )
+
   return json_util.dumps(total_flights, ensure_ascii=False)
 
-# Controller: Fetch a flight chart
+
 @app.route("/total_flights_chart")
 def total_flights_chart():
-  total_flights = client.agile_data_science.flights_by_month.find({}, 
-    sort = [
+  total_flights = client.agile_data_science.flights_by_month.find(
+    {},
+    sort=[
       ('Year', 1),
       ('Month', 1)
-    ])
+    ]
+  )
+
   return render_template('total_flights_chart.html', total_flights=total_flights)
+
 
 @app.route("/airplanes")
 @app.route("/airplanes/")
 def search_airplanes():
-
   search_config = [
     {'field': 'TailNum', 'label': 'Tail Number'},
     {'field': 'Owner', 'sort_order': 0},
@@ -113,55 +309,32 @@ def search_airplanes():
     {'field': 'ManufacturerYear', 'label': 'MFR Year'},
     {'field': 'SerialNumber', 'label': 'Serial Number'},
     {'field': 'EngineManufacturer', 'label': 'Engine MFR', 'sort_order': 3},
-    {'field': 'EngineModel', 'label': 'Engine Model', 'sort_order': 4}
+    {'field': 'EngineModel', 'sort_order': 4}
   ]
 
-  # Pagination parameters
   start = request.args.get('start') or 0
   start = int(start)
+
   end = request.args.get('end') or config.AIRPLANE_RECORDS_PER_PAGE
   end = int(end)
 
-  # Navigation path and offset setup
   nav_path = predict_utils.strip_place(request.url)
-  nav_offsets = predict_utils.get_navigation_offsets(start, end, config.AIRPLANE_RECORDS_PER_PAGE)
-
-  print("nav_path: [{}]".format(nav_path))
-  print(json.dumps(nav_offsets))
-
-  # Build the base of our elasticsearch query
-  query = {
-    'query': {
-      'bool': {
-        'must': []}
-    },
-    'sort': [
-      {'Owner': {'order': 'asc'} },
-      # {'Manufacturer': {'order': 'asc', 'ignore_unmapped' : True} },
-      # {'Model': {'order': 'asc', 'ignore_unmapped': True} },
-      # {'EngineManufacturer': {'order': 'asc', 'ignore_unmapped' : True} },
-      # {'EngineModel': {'order': 'asc', 'ignore_unmapped': True} },
-      # {'TailNum': {'order': 'asc', 'ignore_unmapped' : True} },
-      '_score'
-    ],
-    'from': start,
-    'size': config.AIRPLANE_RECORDS_PER_PAGE
-  }
+  nav_offsets = predict_utils.get_navigation_offsets(
+    start,
+    end,
+    config.AIRPLANE_RECORDS_PER_PAGE
+  )
 
   arg_dict = {}
+
   for item in search_config:
     field = item['field']
     value = request.args.get(field)
-    print(field, value)
     arg_dict[field] = value
-    if value:
-      query['query']['bool']['must'].append({'match': {field: value}})
 
-  # Query elasticsearch, process to get records and count
-  results = elastic.search(query)
-  airplanes, airplane_count = predict_utils.process_search(results)
+  airplanes = []
+  airplane_count = 0
 
-  # Persist search parameters in the form template
   return render_template(
     'all_airplanes.html',
     search_config=search_config,
@@ -172,34 +345,37 @@ def search_airplanes():
     nav_offsets=nav_offsets,
   )
 
-@app.route("/airplanes/chart/manufacturers.json")
+
 @app.route("/airplanes/chart/manufacturers.json")
 def airplane_manufacturers_chart():
   mfr_chart = client.agile_data_science.airplane_manufacturer_totals.find_one()
   return json.dumps(mfr_chart)
 
-# Controller: Fetch a flight and display it
+
 @app.route("/airplane/<tail_number>")
 @app.route("/airplane/flights/<tail_number>")
 def flights_per_airplane(tail_number):
   flights = client.agile_data_science.flights_per_airplane.find_one(
     {'TailNum': tail_number}
   )
+
   return render_template(
     'flights_per_airplane.html',
     flights=flights,
     tail_number=tail_number
   )
 
-# Controller: Fetch an airplane entity page
+
 @app.route("/airline/<carrier_code>")
 def airline(carrier_code):
   airline_summary = client.agile_data_science.airlines.find_one(
     {'CarrierCode': carrier_code}
   )
+
   airline_airplanes = client.agile_data_science.airplanes_per_carrier.find_one(
     {'Carrier': carrier_code}
   )
+
   return render_template(
     'airlines.html',
     airline_summary=airline_summary,
@@ -207,7 +383,7 @@ def airline(carrier_code):
     carrier_code=carrier_code
   )
 
-# Controller: Fetch an airplane entity page
+
 @app.route("/")
 @app.route("/airlines")
 @app.route("/airlines/")
@@ -215,11 +391,10 @@ def airlines():
   airlines = client.agile_data_science.airplanes_per_carrier.find()
   return render_template('all_airlines.html', airlines=airlines)
 
+
 @app.route("/flights/search")
 @app.route("/flights/search/")
 def search_flights():
-
-  # Search parameters
   carrier = request.args.get('Carrier')
   flight_date = request.args.get('FlightDate')
   origin = request.args.get('Origin')
@@ -227,52 +402,22 @@ def search_flights():
   tail_number = request.args.get('TailNum')
   flight_number = request.args.get('FlightNum')
 
-  # Pagination parameters
   start = request.args.get('start') or 0
   start = int(start)
+
   end = request.args.get('end') or config.RECORDS_PER_PAGE
   end = int(end)
 
-  # Navigation path and offset setup
   nav_path = predict_utils.strip_place(request.url)
-  nav_offsets = predict_utils.get_navigation_offsets(start, end, config.RECORDS_PER_PAGE)
+  nav_offsets = predict_utils.get_navigation_offsets(
+    start,
+    end,
+    config.RECORDS_PER_PAGE
+  )
 
-  # Build the base of our elasticsearch query
-  query = {
-    'query': {
-      'bool': {
-        'must': []}
-    },
-    'sort': [
-      {'FlightDate': {'order': 'asc', 'ignore_unmapped' : True} },
-      {'DepTime': {'order': 'asc', 'ignore_unmapped' : True} },
-      {'Carrier': {'order': 'asc', 'ignore_unmapped' : True} },
-      {'FlightNum': {'order': 'asc', 'ignore_unmapped' : True} },
-      '_score'
-    ],
-    'from': start,
-    'size': config.RECORDS_PER_PAGE
-  }
+  flights = []
+  flight_count = 0
 
-  # Add any search parameters present
-  if carrier:
-    query['query']['bool']['must'].append({'match': {'Carrier': carrier}})
-  if flight_date:
-    query['query']['bool']['must'].append({'match': {'FlightDate': flight_date}})
-  if origin:
-    query['query']['bool']['must'].append({'match': {'Origin': origin}})
-  if dest:
-    query['query']['bool']['must'].append({'match': {'Dest': dest}})
-  if tail_number:
-    query['query']['bool']['must'].append({'match': {'TailNum': tail_number}})
-  if flight_number:
-    query['query']['bool']['must'].append({'match': {'FlightNum': flight_number}})
-
-  # Query elasticsearch, process to get records and count
-  results = elastic.search(query)
-  flights, flight_count = predict_utils.process_search(results)
-
-  # Persist search parameters in the form template
   return render_template(
     'search.html',
     flights=flights,
@@ -285,67 +430,22 @@ def search_flights():
     dest=dest,
     tail_number=tail_number,
     flight_number=flight_number
-    )
+  )
+
 
 @app.route("/delays")
 def delays():
   return render_template('delays.html')
 
-# Load our regression model
-import joblib
-from os import environ
 
-
-project_home = os.environ["PROJECT_HOME"]
-# vectorizer = joblib.load("{}/models/sklearn_vectorizer.pkl".format(project_home))
-# regressor = joblib.load("{}/models/sklearn_regressor.pkl".format(project_home))
-
-# Make our API a post, so a search engine wouldn't hit it
 @app.route("/flights/delays/predict/regress", methods=['POST'])
 def regress_flight_delays():
-  
-  api_field_type_map = \
-    {
-      "DepDelay": int,
-      "Carrier": str,
-      "FlightDate": str,
-      "Dest": str,
-      "FlightNum": str,
-      "Origin": str
-    }
-  
-  api_form_values = {}
-  for api_field_name, api_field_type in api_field_type_map.items():
-    api_form_values[api_field_name] = request.form.get(api_field_name, type=api_field_type)
-  
-  # Set the direct values
-  prediction_features = {}
-  prediction_features['Origin'] = api_form_values['Origin']
-  prediction_features['Dest'] = api_form_values['Dest']
-  prediction_features['FlightNum'] = api_form_values['FlightNum']
-  
-  # Set the derived values
-  prediction_features['Distance'] = predict_utils.get_flight_distance(client, api_form_values['Origin'], api_form_values['Dest'])
-  
-  # Turn the date into DayOfYear, DayOfMonth, DayOfWeek
-  date_features_dict = predict_utils.get_regression_date_args(api_form_values['FlightDate'])
-  for api_field_name, api_field_value in date_features_dict.items():
-    prediction_features[api_field_name] = api_field_value
-  
-  # Vectorize the features
-  feature_vectors = vectorizer.transform([prediction_features])
-  
-  # Make the prediction!
-  result = regressor.predict(feature_vectors)[0]
-  
-  # Return a JSON object
-  result_obj = {"Delay": result}
-  return json.dumps(result_obj)
+  result_obj = {"Delay": 0}
+  return jsonify(result_obj)
+
 
 @app.route("/flights/delays/predict")
 def flight_delays_page():
-  """Serves flight delay predictions"""
-  
   form_config = [
     {'field': 'DepDelay', 'label': 'Departure Delay', 'value': 5},
     {'field': 'Carrier', 'value': 'AA'},
@@ -354,57 +454,60 @@ def flight_delays_page():
     {'field': 'Dest', 'label': 'Destination', 'value': 'SFO'},
     {'field': 'FlightNum', 'label': 'Flight Number', 'value': 1519},
   ]
-  
-  return render_template('flight_delays_predict.html', form_config=form_config)
 
-# Make our API a post, so a search engine wouldn't hit it
+  return render_template(
+    'flight_delays_predict.html',
+    form_config=form_config
+  )
+
+
 @app.route("/flights/delays/predict/classify", methods=['POST'])
 def classify_flight_delays():
-  """POST API for classifying flight delays"""
-  api_field_type_map = \
-    {
-      "DepDelay": float,
-      "Carrier": str,
-      "FlightDate": str,
-      "Dest": str,
-      "FlightNum": str,
-      "Origin": str
-    }
-  
+  api_field_type_map = {
+    "DepDelay": float,
+    "Carrier": str,
+    "FlightDate": str,
+    "Dest": str,
+    "FlightNum": str,
+    "Origin": str
+  }
+
   api_form_values = {}
+
   for api_field_name, api_field_type in api_field_type_map.items():
-    api_form_values[api_field_name] = request.form.get(api_field_name, type=api_field_type)
-  
-  # Set the direct values, which excludes Date
+    api_form_values[api_field_name] = request.form.get(
+      api_field_name,
+      type=api_field_type
+    )
+
   prediction_features = {}
+
   for key, value in api_form_values.items():
     prediction_features[key] = value
-  
-  # Set the derived values
-  prediction_features['Distance'] = predict_utils.get_flight_distance(
-    client, api_form_values['Origin'],
+
+  prediction_features['Distance'] = get_flight_distance_cassandra(
+    api_form_values['Origin'],
     api_form_values['Dest']
   )
-  
-  # Turn the date into DayOfYear, DayOfMonth, DayOfWeek
+
   date_features_dict = predict_utils.get_regression_date_args(
     api_form_values['FlightDate']
   )
+
   for api_field_name, api_field_value in date_features_dict.items():
     prediction_features[api_field_name] = api_field_value
-  
-  # Add a timestamp
+
   prediction_features['Timestamp'] = predict_utils.get_current_timestamp()
-  
+
   client.agile_data_science.prediction_tasks.insert_one(
     prediction_features
   )
+
   return json_util.dumps(prediction_features)
+
 
 @app.route("/flights/delays/predict_batch")
 def flight_delays_batch_page():
-  """Serves flight delay predictions"""
-  
   form_config = [
     {'field': 'DepDelay', 'label': 'Departure Delay', 'value': 5},
     {'field': 'Carrier', 'value': 'AA'},
@@ -413,21 +516,22 @@ def flight_delays_batch_page():
     {'field': 'Dest', 'label': 'Destination', 'value': 'SFO'},
     {'field': 'FlightNum', 'label': 'Flight Number', 'value': 1519},
   ]
-  
-  return render_template("flight_delays_predict_batch.html", form_config=form_config)
+
+  return render_template(
+    "flight_delays_predict_batch.html",
+    form_config=form_config
+  )
+
 
 @app.route("/flights/delays/predict_batch/results/<iso_date>")
 def flight_delays_batch_results_page(iso_date):
-  """Serves page for batch prediction results"""
-  
-  # Get today and tomorrow's dates as iso strings to scope query
   today_dt = iso8601.parse_date(iso_date)
   rounded_today = today_dt.date()
   iso_today = rounded_today.isoformat()
+
   rounded_tomorrow_dt = rounded_today + datetime.timedelta(days=1)
   iso_tomorrow = rounded_tomorrow_dt.isoformat()
-  
-  # Fetch today's prediction results from Mongo
+
   predictions = client.agile_data_science.prediction_results.find(
     {
       'Timestamp': {
@@ -436,69 +540,118 @@ def flight_delays_batch_results_page(iso_date):
       }
     }
   )
-  
+
   return render_template(
     "flight_delays_predict_batch_results.html",
     predictions=predictions,
     iso_date=iso_date
   )
 
-# Make our API a post, so a search engine wouldn't hit it
+
 @app.route("/flights/delays/predict/classify_realtime", methods=['POST'])
 def classify_flight_delays_realtime():
-  """POST API for classifying flight delays"""
-  
-  # Define the form fields to process
-  api_field_type_map = \
-    {
+  try:
+    print("POST recibido en /flights/delays/predict/classify_realtime")
+    print("FORM:", dict(request.form))
+
+    api_field_type_map = {
       "DepDelay": float,
       "Carrier": str,
       "FlightDate": str,
       "Dest": str,
-      "FlightNum": str,
       "Origin": str
     }
 
-  # Fetch the values for each field from the form object
-  api_form_values = {}
-  for api_field_name, api_field_type in api_field_type_map.items():
-    api_form_values[api_field_name] = request.form.get(api_field_name, type=api_field_type)
-  
-  # Set the direct values, which excludes Date
-  prediction_features = {}
-  for key, value in api_form_values.items():
-    prediction_features[key] = value
-  
-  # Set the derived values
-  prediction_features['Distance'] = predict_utils.get_flight_distance(
-    client, api_form_values['Origin'],
-    api_form_values['Dest']
-  )
-  
-  # Turn the date into DayOfYear, DayOfMonth, DayOfWeek
-  date_features_dict = predict_utils.get_regression_date_args(
-    api_form_values['FlightDate']
-  )
-  for api_field_name, api_field_value in date_features_dict.items():
-    prediction_features[api_field_name] = api_field_value
-  
-  # Add a timestamp
-  prediction_features['Timestamp'] = predict_utils.get_current_timestamp()
-  
-  # Create a unique ID for this message
-  unique_id = str(uuid.uuid4())
-  prediction_features['UUID'] = unique_id
-  
-  message_bytes = json.dumps(prediction_features).encode()
-  producer.send(PREDICTION_TOPIC, message_bytes)
+    api_form_values = {}
 
-  response = {"status": "OK", "id": unique_id}
-  return json_util.dumps(response)
+    for api_field_name, api_field_type in api_field_type_map.items():
+      api_form_values[api_field_name] = request.form.get(
+        api_field_name,
+        type=api_field_type
+      )
+
+    if not api_form_values["Origin"]:
+      return jsonify({
+        "status": "ERROR",
+        "error": "Falta el campo Origin"
+      }), 400
+
+    if not api_form_values["Dest"]:
+      return jsonify({
+        "status": "ERROR",
+        "error": "Falta el campo Dest"
+      }), 400
+
+    if not api_form_values["Carrier"]:
+      return jsonify({
+        "status": "ERROR",
+        "error": "Falta el campo Carrier"
+      }), 400
+
+    if not api_form_values["FlightDate"]:
+      return jsonify({
+        "status": "ERROR",
+        "error": "Falta el campo FlightDate"
+      }), 400
+
+    if api_form_values["DepDelay"] is None:
+      api_form_values["DepDelay"] = 0.0
+
+    prediction_features = {}
+
+    for key, value in api_form_values.items():
+      prediction_features[key] = value
+
+    prediction_features["FlightNum"] = request.form.get("FlightNum", "0")
+
+    prediction_features['Distance'] = get_flight_distance_cassandra(
+      api_form_values['Origin'],
+      api_form_values['Dest']
+    )
+
+    date_features_dict = predict_utils.get_regression_date_args(
+      api_form_values['FlightDate']
+    )
+
+    for api_field_name, api_field_value in date_features_dict.items():
+      prediction_features[api_field_name] = api_field_value
+
+    prediction_features['Timestamp'] = predict_utils.get_current_timestamp()
+
+    unique_id = str(uuid.uuid4())
+    prediction_features['UUID'] = unique_id
+
+    print("Enviando a Kafka:")
+    print(prediction_features)
+
+    send_prediction_to_kafka(prediction_features)
+
+    print("PeticiÃ³n enviada a Kafka con UUID:", unique_id)
+
+    listener_thread = threading.Thread(
+      target=wait_for_prediction_from_cassandra,
+      args=(unique_id,)
+    )
+    listener_thread.daemon = True
+    listener_thread.start()
+
+    return jsonify({
+      "status": "OK",
+      "id": unique_id
+    })
+
+  except Exception as e:
+    print("ERROR en classify_flight_delays_realtime:")
+    print(repr(e))
+
+    return jsonify({
+      "status": "ERROR",
+      "error": str(e)
+    }), 500
+
 
 @app.route("/flights/delays/predict_kafka")
 def flight_delays_page_kafka():
-  """Serves flight delay prediction page with polling form"""
-  
   form_config = [
     {'field': 'DepDelay', 'label': 'Departure Delay', 'value': 5},
     {'field': 'Carrier', 'value': 'AA'},
@@ -506,40 +659,120 @@ def flight_delays_page_kafka():
     {'field': 'Origin', 'value': 'ATL'},
     {'field': 'Dest', 'label': 'Destination', 'value': 'SFO'}
   ]
-  
-  return render_template('flight_delays_predict_kafka.html', form_config=form_config)
+
+  return render_template(
+    'flight_delays_predict_kafka.html',
+    form_config=form_config
+  )
+
 
 @app.route("/flights/delays/predict/classify_realtime/response/<unique_id>")
 def classify_flight_delays_realtime_response(unique_id):
-  """Serves predictions to polling requestors"""
-  
-  prediction = client.agile_data_science.flight_delay_ml_response.find_one(
-    {
-      "UUID": unique_id
-    }
+  result = cassandra_session.execute(
+    """
+    SELECT uuid, origin, dest, carrier, route, flight_date,
+           day_of_week, day_of_year, day_of_month,
+           dep_delay, distance, prediction, timestamp
+    FROM flight_delay_ml_response
+    WHERE uuid = %s
+    """,
+    (unique_id,)
   )
-  
-  response = {"status": "WAIT", "id": unique_id}
-  if prediction:
+
+  row = result.one()
+
+  response = {
+    "status": "WAIT",
+    "id": unique_id
+  }
+
+  if row:
     response["status"] = "OK"
-    response["prediction"] = prediction
-  
-  return json_util.dumps(response)
+    response["prediction"] = prediction_row_to_dict(row)
+
+  return jsonify(response)
+
+
+
+
+@app.route("/flights/delays/predictions_history")
+def predictions_history():
+  try:
+    result = cassandra_session.execute(
+      """
+      SELECT uuid, origin, dest, carrier, route, flight_date,
+             day_of_week, day_of_year, day_of_month,
+             dep_delay, distance, prediction, timestamp
+      FROM flight_delay_ml_response
+      LIMIT 30
+      """
+    )
+
+    predictions = []
+
+    for row in result:
+      predictions.append(prediction_row_to_dict(row))
+
+    predictions = sorted(
+      predictions,
+      key=lambda item: item.get("Timestamp", ""),
+      reverse=True
+    )
+
+    return jsonify({
+      "status": "OK",
+      "predictions": predictions
+    })
+
+  except Exception as e:
+    print("ERROR obteniendo historial de predicciones:")
+    print(repr(e))
+
+    return jsonify({
+      "status": "ERROR",
+      "error": str(e)
+    }), 500
+
+
+@socketio.on('join')
+def on_join(data):
+  unique_id = data.get('id')
+
+  if unique_id:
+    print("Cliente unido a sala WebSocket:", unique_id)
+    join_room(unique_id)
+
 
 def shutdown_server():
   func = request.environ.get('werkzeug.server.shutdown')
+
   if func is None:
     raise RuntimeError('Not running with the Werkzeug Server')
+
   func()
+
 
 @app.route('/shutdown')
 def shutdown():
   shutdown_server()
   return 'Server shutting down...'
 
+
 if __name__ == "__main__":
-    app.run(
+  print("Flask arrancando...")
+  print("Kafka:", KAFKA_BOOTSTRAP_SERVERS)
+  print("Cassandra:", CASSANDRA_HOST)
+
+  listener_thread = threading.Thread(target=kafka_response_listener)
+  listener_thread.daemon = True
+  listener_thread.start()
+
+  socketio.run(
+    app,
+    host="0.0.0.0",
+    port=5001,
     debug=True,
-    host='0.0.0.0',
-    port='5001'
+    use_reloader=False,
+    allow_unsafe_werkzeug=True
   )
+

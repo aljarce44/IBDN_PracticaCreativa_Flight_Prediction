@@ -1,34 +1,78 @@
 {% extends "layout.html" %}
+
 {% block body %}
-  <!-- Navigation guide -->
-  / <a href="/flights/delays/predict_kafka">Flight Delay Prediction with Kafka</a>
 
-  <p class="lead" style="margin: 10px; margin-left: 0px;">
-    <!-- Airline Name and website-->
-    Predicting Flight Delays with Kafka
-  </p>
+<link rel="stylesheet" href="/static/flight_airport_board.css">
 
-  <!-- Generate form from search_config and request args -->
-  <form id="flight_delay_classification" action="/flights/delays/predict/classify_realtime" method="post">
-    {% for item in form_config %}
-      {% if 'label' in item %}
-        <label for="{{item['field']}}">{{item['label']}}</label>
-      {% else %}
-        <label for="{{item['field']}}">{{item['field']}}</label>
-      {% endif %}
-        <input name="{{item['field']}}" style="width: 36px; margin-right: 10px;" 
-        {% if 'value' in item %}
-          value="{{item['value']}}"
-        {% endif %}
-        ></input>
-    {% endfor %}
-    <button type="submit" class="btn btn-xs btn-default" style="height: 25px">Submit</button>
-  </form>
+<div class="airport-page">
 
-  <div style="margin-top: 10px;">
-      <p>Delay: <span id="result" style="display: inline-block;"></span></p>
-  </div>
+  <section class="airport-hero">
+    <div class="airport-kicker">IBDN Flight Intelligence</div>
+    <h1 class="airport-title">Flight Delay Control Tower</h1>
+    <p class="airport-subtitle">
+      Predicción en tiempo real con Kafka, Spark Streaming, Cassandra y WebSocket.
+      Envía un vuelo, espera la respuesta y consulta el histórico como un panel de aeropuerto.
+    </p>
+  </section>
 
-  <!-- Load our form processing javascript -->
-  <script src="/static/flight_delay_predict_polling.js"></script>
+  <main class="airport-grid">
+
+    <section class="airport-card">
+      <div class="airport-card-header">
+        <h2>✈ Nueva predicción de retraso</h2>
+        <span class="airport-badge">Live Kafka</span>
+      </div>
+
+      <form id="flight_delay_classification" class="airport-form" action="/flights/delays/predict/classify_realtime" method="post">
+        <div class="airport-form-row">
+          {% for item in form_config %}
+            <div class="airport-field">
+              {% if 'label' in item %}
+                <label for="{{ item['field'] }}">{{ item['label'] }}</label>
+              {% else %}
+                <label for="{{ item['field'] }}">{{ item['field'] }}</label>
+              {% endif %}
+
+              <input
+                name="{{ item['field'] }}"
+                {% if 'value' in item %}
+                  value="{{ item['value'] }}"
+                {% endif %}
+              />
+            </div>
+          {% endfor %}
+
+          <button type="submit" class="airport-submit">
+            Submit
+          </button>
+        </div>
+      </form>
+
+      <div id="result" class="airport-result"></div>
+
+      <div class="airport-history-actions">
+        <p>Consulta las últimas predicciones guardadas en Cassandra.</p>
+        <button id="history-toggle" type="button" class="airport-history-button">
+          Ver anteriores predicciones
+        </button>
+      </div>
+
+      <div id="history-board" class="airport-board">
+        <div class="airport-board-title">
+          <h3>Departures / Predictions Board</h3>
+          <span class="airport-badge">Cassandra History</span>
+        </div>
+
+        <div id="history-content" class="airport-empty">
+          Pulsa el botón para cargar el histórico.
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="/static/flight_delay_predict_websocket.js"></script>
+
 {% endblock %}

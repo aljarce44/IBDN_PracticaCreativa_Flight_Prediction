@@ -1,0 +1,119 @@
+services:
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: flight-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: ruok,srvr,stat
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: flight-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: flight-zookeeper:2181
+
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://flight-kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra-flight-docker
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_CLUSTER_NAME: flight-delay-cluster
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_RACK: rack1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio-lakehouse-docker
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  flask:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.flask
+    container_name: flight-flask
+    depends_on:
+      - kafka
+      - cassandra
+      - minio
+    ports:
+      - "5001:5001"
+    environment:
+      PROJECT_HOME: /app
+      KAFKA_BOOTSTRAP_SERVERS: flight-kafka:29092
+      CASSANDRA_HOST: cassandra-flight-docker
+      MINIO_ENDPOINT: http://minio-lakehouse-docker:9000
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: password123
+    volumes:
+      - .:/app
+    working_dir: /app/resources/web
+    command: python predict_flask.py
+
+  spark:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.spark
+    container_name: flight-spark-streaming
+    depends_on:
+      - kafka
+      - cassandra
+      - minio
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: flight-kafka:29092
+      CASSANDRA_HOST: cassandra-flight-docker
+      MINIO_ENDPOINT: http://minio-lakehouse-docker:9000
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: password123
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: >
+      /opt/spark/bin/spark-submit
+      --master local[1]
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,com.datastax.spark:spark-cassandra-connector_2.12:3.5.1
+      --conf spark.hadoop.fs.s3a.endpoint=http://minio-lakehouse-docker:9000
+      --conf spark.hadoop.fs.s3a.access.key=admin
+      --conf spark.hadoop.fs.s3a.secret.key=password123
+      --conf spark.hadoop.fs.s3a.path.style.access=true
+      --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem
+      --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false
+      --conf spark.cassandra.connection.host=cassandra-flight-docker
+      resources/streaming_predictions_kafka_cassandra.py
+      s3a://lakehouse/models
+
+volumes:
+  cassandra_data:
+  minio_data:

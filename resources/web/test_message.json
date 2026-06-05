@@ -1,0 +1,14 @@
+{
+  "UUID": "test-subprocess-001",
+  "Origin": "ATL",
+  "Dest": "SFO",
+  "Carrier": "AA",
+  "FlightDate": "2016-12-25",
+  "FlightNum": "1519",
+  "DepDelay": 5,
+  "Distance": 2139,
+  "DayOfWeek": 7,
+  "DayOfYear": 360,
+  "DayOfMonth": 25,
+  "Timestamp": "2026-05-06T08:40:00"
+}
